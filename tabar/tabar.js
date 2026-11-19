@@ -202,7 +202,7 @@ function coexist(){
   svg.append('g').selectAll('text').data(ticks).join('text').attr('class','svgmuted').attr('font-size',10.5).attr('x',x).attr('y',h-12).attr('text-anchor','middle').text(t=>t>=1e6?FA(t/1e6)+' م':FA(t/1e3)+' هـ');
   const g=svg.append('g').selectAll('g').data(sp).join('a').attr('href',d=>'#/a/'+d.id);
   g.append('rect').attr('x',d=>x(Math.max(d.to*1e6,2e4))).attr('width',d=>Math.max(6,x(d.from*1e6)-x(Math.max(d.to*1e6,2e4)))).attr('y',(d,i)=>14+i*rowH).attr('height',rowH-12).attr('rx',8).attr('fill',d=>D[d.d].color).attr('class','bar');
-  g.append('text').attr('class','svgtext').attr('font-size',12.5).attr('x',w-right+10).attr('y',(d,i)=>14+i*rowH+(rowH-12)/2+4).text(d=>d.t);
+  g.append('text').attr('class','svgtext').attr('font-size',12.5).attr('direction','rtl').attr('text-anchor','start').attr('x',w-8).attr('y',(d,i)=>14+i*rowH+(rowH-12)/2+4).text(d=>d.t);
   const cur=svg.append('line').attr('y1',6).attr('y2',h-28).attr('stroke',css('--ink')).attr('stroke-width',2);
   const r=document.getElementById('cxr');
   const upd=()=>{const t=Math.exp(Math.log(7.5e6)+(Math.log(2e4)-Math.log(7.5e6))*r.value/1000);cur.attr('x1',x(t)).attr('x2',x(t));
