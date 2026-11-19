@@ -334,8 +334,14 @@ function iran(){
     .on('mousemove',(e,a)=>showTip(e,`<b>${a.t}</b><br>${esc(a.sum).slice(0,140)}…`)).on('mouseleave',hideTip);
   g.append('circle').attr('r',7).attr('fill',col).attr('stroke',css('--card')).attr('stroke-width',1.5);
   g.filter(a=>(a.who||'').includes(' ')).append('path').attr('d',d3.arc()({innerRadius:0,outerRadius:7,startAngle:0,endAngle:Math.PI})).attr('fill',a=>WC[(a.who||'').split(' ')[1]]);
-  const placed=[];g.each(function(a){const p=proj(a.loc);a._lab=!placed.some(q=>Math.abs(q[0]-p[0])<70&&Math.abs(q[1]-p[1])<16);if(a._lab)placed.push(p)});
-  g.filter(a=>a._lab).append('text').attr('x',-10).attr('y',4).attr('text-anchor','start').attr('font-size',12).attr('class','svgmuted').attr('direction','rtl').text(a=>a.t.replace(/^(غار|پناهگاه صخره‌ای) /,''));
+  // readable names: bigger, with a halo; each tries left, right, above, below of its dot and never covers another name or dot
+  const nm=a=>a.t.replace(/^(غار|پناهگاه صخره‌ای|اشکفت) /,'');
+  const boxes=sites.map(a=>{const p=proj(a.loc);return [p[0]-8,p[1]-8,p[0]+8,p[1]+8]});
+  sites.forEach(a=>{const [px,py]=proj(a.loc),wd=nm(a).length*9+6;a._lab=null;
+    for(const [dx,dy,an] of [[-11,6,'end'],[11,6,'start'],[0,-12,'middle'],[0,24,'middle']]){const l=an==='end'?px+dx-wd:an==='start'?px+dx:px-wd/2;const bx=[l,py+dy-15,l+wd,py+dy+3];
+      if(!boxes.some(b=>bx[0]<b[2]&&bx[2]>b[0]&&bx[1]<b[3]&&bx[3]>b[1])&&bx[0]>4&&bx[2]<w-4){boxes.push(bx);a._lab=[dx,dy,an];break}}});
+  g.filter(a=>a._lab).append('text').attr('x',a=>a._lab[0]).attr('y',a=>a._lab[1]).attr('text-anchor',a=>a._lab[2]).attr('direction','ltr').attr('font-size',16).attr('font-weight',600).attr('fill',css('--ink'))
+    .style('paint-order','stroke').style('stroke',css('--card')).style('stroke-width','4px').style('stroke-linejoin','round').text(nm);
   document.getElementById('irl').innerHTML=`<p style="margin:0 0 6px"><b>${FA(sites.length)}</b> محوطه با مقاله</p><table><tr><th>محوطه</th><th>انسان</th></tr>${sites.map(a=>`<tr><td><a href="#/a/${a.id}">${a.t}</a></td><td>${(a.who||'').split(' ').filter(Boolean).map(k=>`<span class="dot" style="background:${WC[k]}"></span>`).join(' ')||'—'}</td></tr>`).join('')}</table>`;
   // gantt
   const rows=W.articles.filter(a=>a.span&&(a.d==='iran'||a.loc&&a.loc[0]>42&&a.loc[0]<63)).sort((a,b)=>b.span[0]-a.span[0]);
