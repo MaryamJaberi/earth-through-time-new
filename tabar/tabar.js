@@ -376,11 +376,14 @@ function brain(){
   const mid=a=>Math.sqrt(a.from*1e6*Math.max(a.to*1e6,2e4)),c=a=>GC[grp(a)];
   g.append('line').attr('x1',a=>x(a.from*1e6)).attr('x2',a=>x(Math.max(a.to*1e6,2e4))).attr('y1',a=>y((a.brain[0]+a.brain[1])/2)).attr('y2',a=>y((a.brain[0]+a.brain[1])/2)).attr('stroke',c).attr('stroke-width',2).attr('opacity',.5);
   g.append('rect').attr('x',a=>x(mid(a))-5).attr('width',10).attr('y',a=>y(a.brain[1])).attr('height',a=>Math.max(4,y(a.brain[0])-y(a.brain[1]))).attr('rx',5).attr('fill',c);
-  const boxes=[];const lab=a=>a.t.replace(/ \(.*\)/,'');
-  sp.slice().sort((p,q)=>(q.brain[1]-q.brain[0])-(p.brain[1]-p.brain[0])).forEach(a=>{const cx=x(mid(a)),wd=lab(a).length*6.2+6;
-    for(const [yy,an] of [[y(a.brain[1])-8,0],[y(a.brain[0])+16,1]]){const bx=[cx-wd/2,yy-12,cx+wd/2,yy+2];
-      if(!boxes.some(b=>bx[0]<b[2]&&bx[2]>b[0]&&bx[1]<b[3]&&bx[3]>b[1])&&bx[0]>L&&bx[2]<w-4){boxes.push(bx);a._ly=yy;return}}a._ly=null});
-  g.filter(a=>a._ly!=null).append('text').attr('x',a=>x(mid(a))).attr('y',a=>a._ly).attr('text-anchor','middle').attr('font-size',12).attr('fill',css('--ink')).text(lab);
+  // names never cover a bar or another name: bars are obstacles first, then each name tries above, below, right, left
+  const lab=a=>a.t.replace(/ \(.*\)/,'');
+  const boxes=sp.map(a=>[x(mid(a))-6,y(a.brain[1])-1,x(mid(a))+6,y(a.brain[0])+1]);
+  sp.slice().sort((p,q)=>(q.brain[1]-q.brain[0])-(p.brain[1]-p.brain[0])).forEach(a=>{const cx=x(mid(a)),wd=lab(a).length*7.2+8,top=y(a.brain[1]),bot=y(a.brain[0]),cy=(top+bot)/2+4;
+    const tries=[[cx,top-8,'middle'],[cx,bot+17,'middle'],[cx+10,cy,'start'],[cx-10,cy,'end'],[cx,top-24,'middle'],[cx,bot+33,'middle']];
+    for(const [xx,yy,an] of tries){const l=an==='middle'?xx-wd/2:an==='start'?xx:xx-wd;const bx=[l,yy-13,l+wd,yy+3];
+      if(!boxes.some(b=>bx[0]<b[2]&&bx[2]>b[0]&&bx[1]<b[3]&&bx[3]>b[1])&&bx[0]>L&&bx[2]<w-4){boxes.push(bx);a._lx=xx;a._ly=yy;a._la=an;return}}a._ly=null});
+  g.filter(a=>a._ly!=null).append('text').attr('x',a=>a._lx).attr('y',a=>a._ly).attr('direction','ltr').attr('text-anchor',a=>a._la).attr('font-size',12).attr('fill',css('--ink')).style('paint-order','stroke').style('stroke',css('--card')).style('stroke-width','3px').text(lab);
   const A=document.getElementById('bza'),Bs=document.getElementById('bzb');
   const opts=sp.map(a=>`<option value="${a.id}">${a.t}</option>`).join('');A.innerHTML=opts;Bs.innerHTML=opts;A.value='homo-erectus';Bs.value='homo-sapiens';
   const card=a=>{const m=(a.brain[0]+a.brain[1])/2;return `<div class="box"><svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="${(Math.sqrt(m/1750)*56).toFixed(1)}" fill="${c(a)}" opacity=".85"/></svg>
