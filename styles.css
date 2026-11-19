@@ -162,3 +162,5 @@ html[lang="fa"] .ribbon text.lin-t { direction: rtl; }
 .ribbon ~ .rail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); padding: 0; }
 .ribbon { touch-action: pan-y; cursor: pointer; outline: none; border-radius: 6px; }
 .ribbon:focus-visible { box-shadow: 0 0 0 2px var(--gold); }
+/* the "today's Tehran" marker on reconstructed maps must stay readable on phones */
+@media (max-width: 640px) { .iran-tag { font-size: 24px; stroke-width: 5px; } }
