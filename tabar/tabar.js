@@ -122,7 +122,7 @@ function notFound(){view.innerHTML=head('','این صفحه پیدا نشد','<a
 
 /* ============ GRAPH ============ */
 function graph(){
-  view.innerHTML=head('ابزار','شبکهٔ دانش','هر دایره یک مقاله یا یک دانشمند است و رنگش قلمرو را نشان می‌دهد. روی گره بزن تا مقاله باز شود؛ گره‌ها را می‌توانی بکشی.')+
+  view.innerHTML=head('ابزار','شبکهٔ دانش','هر دایره یک مقاله یا یک دانشمند است و رنگش قلمرو را نشان می‌دهد. اندازهٔ هر دایره، شمار پیوندهای آن است. نشانگر را روی یک گره ببر تا همسایه‌هایش روشن شوند؛ بزن تا مقاله باز شود. با چرخ موس یا دو انگشت بزرگ کن تا نام‌های بیشتری پیدا شوند.')+
   `<div class="ctrl"><button id="gNet" class="on">شبکه</button><button id="gRad">درخت شعاعی</button><span class="legend">${W.domains.map(d=>`<span><span class="dot" style="background:${d.color}"></span>${d.name}</span>`).join('')}<span><span class="dot" style="background:var(--muted)"></span>دانشمندان</span></span></div><div class="stage" id="gStage"></div>`;
   const st=document.getElementById('gStage');
   const draw=m=>{st.innerHTML='';m==='net'?drawNet(st):drawRadial(st)};
@@ -131,21 +131,51 @@ function graph(){
   draw('net');
 }
 function drawNet(st){
+  // whole network first; names only where they fit (most-linked first); hover lights a node's links; wheel / pinch / drag to wander
   const w=1000,h=680;
-  const nodes=[...W.domains.map(d=>({id:'d:'+d.id,t:d.name,c:d.color,r:16,kind:'d'})),...W.articles.map(a=>({id:a.id,t:a.t,c:D[a.d].color,r:7,kind:'a'})),...W.people.map(p=>({id:p.id,t:p.n,c:css('--muted'),r:6,kind:'p'}))];
+  const nodes=[...W.domains.map(d=>({id:'d:'+d.id,t:d.name.split(':')[0],c:d.color,r:16,kind:'d'})),...W.articles.map(a=>({id:a.id,t:a.t,c:D[a.d].color,r:7,kind:'a'})),...W.people.map(p=>({id:p.id,t:p.n,c:css('--muted'),r:6,kind:'p'}))];
   const ids=new Set(nodes.map(n=>n.id)); const L=[]; const add=(s,t)=>{if(ids.has(s)&&ids.has(t)&&s!==t)L.push({source:s,target:t})};
   W.articles.forEach(a=>{add(a.id,'d:'+a.d);(a.rel||[]).forEach(r=>add(a.id,r))}); W.people.forEach(p=>(p.rel||[]).forEach(r=>add(p.id,r)));
-  const svg=d3.select(st).append('svg').attr('viewBox',`0 0 ${w} ${h}`);
-  const sim=d3.forceSimulation(nodes).force('link',d3.forceLink(L).id(d=>d.id).distance(l=>l.target.kind==='d'||l.source.kind==='d'?70:45).strength(.4))
-   .force('charge',d3.forceManyBody().strength(-120)).force('center',d3.forceCenter(w/2,h/2)).force('collide',d3.forceCollide(d=>d.r+3));
-  const link=svg.append('g').attr('stroke',css('--rule')).selectAll('line').data(L).join('line');
-  const node=svg.append('g').selectAll('g').data(nodes).join('g').style('cursor','pointer')
-   .on('click',(e,d)=>{if(d.kind!=='d')location.hash=href(d.id)}).on('mousemove',(e,d)=>showTip(e,esc(d.t))).on('mouseleave',hideTip)
-   .call(d3.drag().on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y}).on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null}));
-  node.append('circle').attr('r',d=>d.r).attr('fill',d=>d.c).attr('stroke',css('--card')).attr('stroke-width',1.5);
-  node.filter(d=>d.kind==='d').append('text').attr('class','svgtext').attr('font-size',13).attr('font-weight',700).attr('text-anchor','middle').attr('dy',-22).text(d=>d.t.split(':')[0]).style('paint-order','stroke').style('stroke',css('--card')).style('stroke-width','4px');
-  node.filter(d=>d.kind!=='d').append('text').attr('class','svgmuted').attr('font-size',9.5).attr('text-anchor','middle').attr('dy',-10).text(d=>d.t.length>16?d.t.slice(0,15)+'…':d.t);
-  sim.on('tick',()=>{nodes.forEach(n=>{n.x=Math.max(20,Math.min(w-20,n.x));n.y=Math.max(20,Math.min(h-20,n.y))});link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
+  const deg=new Map(); L.forEach(l=>{deg.set(l.source,(deg.get(l.source)||0)+1);deg.set(l.target,(deg.get(l.target)||0)+1)});
+  const nbr=new Map(nodes.map(n=>[n.id,new Set([n.id])])); L.forEach(l=>{nbr.get(l.source).add(l.target);nbr.get(l.target).add(l.source)});
+  nodes.forEach(n=>{n.deg=deg.get(n.id)||0; if(n.kind!=='d') n.r=4+Math.min(8,Math.sqrt(n.deg)*1.6)});
+  const sim=d3.forceSimulation(nodes).force('link',d3.forceLink(L).id(d=>d.id).distance(l=>l.target.kind==='d'||l.source.kind==='d'?80:50).strength(.4))
+   .force('charge',d3.forceManyBody().strength(-150)).force('center',d3.forceCenter(w/2,h/2)).force('collide',d3.forceCollide(d=>d.r+4)).force('x',d3.forceX(w/2).strength(.05)).force('y',d3.forceY(h/2).strength(.09)).stop();
+  for(let i=0;i<360;i++) sim.tick();
+  {const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),sc=Math.min((w-80)/(x1-x0||1),(h-90)/(y1-y0||1));nodes.forEach(n=>{n.x=40+(n.x-x0)*sc;n.y=55+(n.y-y0)*sc})}
+  st.insertAdjacentHTML('beforeend','<div class="gctl"><button type="button" data-z="in" aria-label="بزرگ‌تر">+</button><button type="button" data-z="out" aria-label="کوچک‌تر">−</button><button type="button" data-z="fit">نمای کل</button></div>');
+  const svg=d3.select(st).append('svg').attr('viewBox',`0 0 ${w} ${h}`).attr('class','gnet');
+  const g=svg.append('g');
+  const link=g.append('g').selectAll('line').data(L).join('line').attr('stroke',css('--rule')).attr('vector-effect','non-scaling-stroke')
+   .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  const node=g.append('g').selectAll('a').data(nodes).join('a').attr('href',d=>d.kind==='d'?null:href(d.id)).attr('class',d=>'gn k-'+d.kind).attr('transform',d=>`translate(${d.x},${d.y})`);
+  node.append('title').text(d=>d.t+(d.deg?` · ${FA(d.deg)} پیوند`:''));
+  const circ=node.append('circle').attr('r',d=>d.r).attr('fill',d=>d.c).attr('stroke',css('--card')).attr('stroke-width',1.5).attr('vector-effect','non-scaling-stroke');
+  const lab=g.append('g').attr('class','glabels').selectAll('text').data(nodes).join('text').attr('x',d=>d.x).attr('y',d=>d.y).attr('text-anchor','middle').attr('class',d=>d.kind==='d'?'svgtext':'svgmuted').attr('font-weight',d=>d.kind==='d'?700:500)
+   .style('paint-order','stroke').style('stroke',css('--card')).style('stroke-linejoin','round').text(d=>d.t);
+  let k=1;
+  const order=[...nodes].sort((a,b)=>(b.kind==='d')-(a.kind==='d')||b.deg-a.deg);
+  const declutter=()=>{
+    const box=st.getBoundingClientRect(); const taken=[];
+    const el=new Map(); lab.each(function(d){el.set(d.id,this)});
+    for(const d of order){const t=el.get(d.id); t.style.visibility='visible'; const r=t.getBoundingClientRect();
+      const out=r.right<box.left||r.left>box.right||r.bottom<box.top||r.top>box.bottom;
+      const hit=taken.some(o=>r.left<o.right+2&&r.right>o.left-2&&r.top<o.bottom&&r.bottom>o.top);
+      if(out||hit) t.style.visibility='hidden'; else taken.push(r)}
+  };
+  const size=()=>{
+    lab.attr('font-size',d=>(d.kind==='d'?15:11)/k).attr('dy',d=>-(d.r/Math.sqrt(k))-4/k).style('stroke-width',(3.5/k)+'px');
+    circ.attr('r',d=>d.r/Math.sqrt(k));
+  };
+  let pend=0; const later=()=>{cancelAnimationFrame(pend);pend=requestAnimationFrame(declutter)};
+  const zoom=d3.zoom().scaleExtent([1,8]).translateExtent([[0,0],[w,h]]).on('zoom',e=>{g.attr('transform',e.transform);k=e.transform.k;size();later()});
+  svg.call(zoom).on('dblclick.zoom',null);
+  st.querySelector('.gctl').onclick=e=>{const z=e.target.closest('[data-z]');if(!z)return;const v=z.dataset.z;
+    if(v==='fit')svg.transition().duration(350).call(zoom.transform,d3.zoomIdentity);else svg.transition().duration(250).call(zoom.scaleBy,v==='in'?1.6:1/1.6)};
+  node.on('mouseenter',(e,d)=>{const near=nbr.get(d.id);svg.classed('focus',true);node.classed('near',n=>near.has(n.id));link.classed('hot',l=>l.source.id===d.id||l.target.id===d.id);
+      lab.filter(n=>near.has(n.id)).each(function(){this.style.visibility='visible'});lab.classed('far',n=>!near.has(n.id))})
+   .on('mouseleave',()=>{svg.classed('focus',false);node.classed('near',false);lab.classed('far',false);link.classed('hot',false);declutter()});
+  size(); declutter(); if(document.fonts) document.fonts.ready.then(declutter);
 }
 function drawRadial(st){
   const data={name:'تبار',children:[...W.domains.map(d=>({name:d.name.split(':')[0],c:d.color,children:W.articles.filter(a=>a.d===d.id).map(a=>({name:a.t,id:a.id,c:d.color}))})),{name:'دانشمندان',c:css('--muted'),children:W.people.map(p=>({name:p.n,id:p.id,c:css('--muted')}))}]};
