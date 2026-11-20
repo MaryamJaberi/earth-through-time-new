@@ -1,0 +1,129 @@
+# پل همگام‌سازی بین این مخزن (مخزن اصلی) و مخزنی که Google AI Studio ساخته است.
+#
+# AI Studio نمی‌تواند به مخزن موجود وصل شود و فقط مخزن تازه می‌سازد.
+# این گردش‌کار آن مخزن را به این مخزن گره می‌زند، بدون اینکه تاریخچهٔ آن را به اینجا بیاورد
+# (تاریخچهٔ مخزن AI Studio کلید امضای اندروید دارد و نباید وارد این مخزن شود):
+#
+#   ۱. تغییرهای تازهٔ AI Studio (از آخرین همگام‌سازی) → یک Pull Request در این مخزن، شاخهٔ from-aistudio
+#   ۲. وقتی چیز تازه‌ای در AI Studio منتظر بازبینی نیست → محتوای main این مخزن
+#      به‌صورت یک commit عادی روی main مخزن AI Studio می‌نشیند تا AI Studio هم آخرین نسخه را ببیند.
+#
+# نقطهٔ آخرین همگام‌سازی با تگ aistudio-sync-base در مخزن AI Studio نگه داشته می‌شود.
+#
+# راه‌اندازی (یک بار):
+#   Settings → Secrets and variables → Actions
+#     Variables → AISTUDIO_REPO        = MaryamJaberi/<نام مخزنی که AI Studio ساخته>
+#     Secrets   → AISTUDIO_SYNC_TOKEN  = توکن با دسترسی نوشتن به هر دو مخزن
+#                 (Contents، Pull requests و Workflows)
+#
+# تا وقتی AISTUDIO_REPO تنظیم نشده، این گردش‌کار کاری نمی‌کند.
+
+name: AI Studio sync
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: aistudio-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    # فقط در مخزنی اجرا می‌شود که متغیر AISTUDIO_REPO دارد (مخزن اصلی)، نه در خود مخزن AI Studio
+    if: vars.AISTUDIO_REPO != ''
+    runs-on: ubuntu-latest
+    env:
+      STUDIO_REPO: ${{ vars.AISTUDIO_REPO }}
+      TOKEN: ${{ secrets.AISTUDIO_SYNC_TOKEN }}
+      GH_TOKEN: ${{ secrets.AISTUDIO_SYNC_TOKEN }}
+      BASE_TAG: aistudio-sync-base
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AISTUDIO_SYNC_TOKEN }}
+
+      - name: Fetch AI Studio repo
+        run: |
+          git config user.name "dour-sync-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add studio "https://x-access-token:${TOKEN}@github.com/${STUDIO_REPO}.git"
+          git fetch origin main
+          git fetch --no-tags studio main
+          if ! git fetch --no-tags studio "+refs/tags/${BASE_TAG}:refs/tags/${BASE_TAG}" 2>/dev/null; then
+            # اجرای اول: نقطهٔ همگام‌سازی هنوز نیست؛ وضعیت فعلی AI Studio نقطهٔ شروع می‌شود
+            # نقطهٔ شروع: اگر فایل .github/aistudio-base.txt شناسهٔ commit تازه‌ترین کاری را دارد که در مخزن اصلی ادغام شده،
+            # همان؛ وگرنه main فعلی AI Studio. (هر چه بعد از آن در AI Studio ثبت شده باشد، PR می‌شود.)
+            start=studio/main
+            if [ -f .github/aistudio-base.txt ]; then
+              want=$(tr -d '[:space:]' < .github/aistudio-base.txt)
+              if git cat-file -e "${want}^{commit}" 2>/dev/null; then start="$want"; fi
+            fi
+            echo "تگ ${BASE_TAG} نبود؛ روی ${start} ساخته می‌شود."
+            git tag -f "${BASE_TAG}" "$start"
+            git push studio "refs/tags/${BASE_TAG}"
+          fi
+
+      - name: Sync
+        run: |
+          set -euo pipefail
+          base=$(git rev-parse "refs/tags/${BASE_TAG}^{commit}")
+          studio=$(git rev-parse studio/main)
+
+          # فایل‌هایی که هرگز از AI Studio به مخزن اصلی نمی‌آیند
+          EXCLUDE=(':!*.keystore' ':!*.jks' ':!release.key' ':!release.crt' ':!key.properties'
+                   ':!*.apk' ':!*.aab' ':!*.idsig' ':!android/bin' ':!android/obj'
+                   ':!android-studio-project/app/build' ':!bundletool.jar'
+                   ':!data/previous_folder_files.json' ':!.github')
+
+          git diff --binary "$base" "$studio" -- . "${EXCLUDE[@]}" > /tmp/studio.patch
+
+          push_main_to_studio() {
+            if [ "$(git rev-parse origin/main^{tree})" = "$(git rev-parse studio/main^{tree})" ]; then
+              echo "AI Studio با main یکی است."
+              new="$studio"
+            else
+              new=$(git commit-tree "origin/main^{tree}" -p "$studio" -m "همگام‌سازی از مخزن اصلی ($(git rev-parse --short origin/main))")
+              git push studio "${new}:refs/heads/main"
+              echo "main به AI Studio فرستاده شد."
+            fi
+            git push --force studio "${new}:refs/tags/${BASE_TAG}"
+          }
+
+          if [ ! -s /tmp/studio.patch ]; then
+            echo "AI Studio تغییر تازه‌ای ندارد."
+            push_main_to_studio
+            exit 0
+          fi
+
+          git checkout -q -B from-aistudio origin/main
+          if git apply --check --reverse --binary /tmp/studio.patch 2>/dev/null; then
+            echo "تغییرهای AI Studio قبلاً در main هستند (PR merge شده)."
+            push_main_to_studio
+            exit 0
+          fi
+
+          if ! git apply --3way --binary /tmp/studio.patch; then
+            echo "::warning::تغییرهای AI Studio با main تداخل دارند؛ PR با نشانهٔ تداخل ساخته می‌شود."
+          fi
+          git add -A
+          git commit -q -m "تغییرهای تازه از AI Studio (تا $(git rev-parse --short "$studio"))"
+          git push --force origin from-aistudio
+
+          open=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?head=${GITHUB_REPOSITORY_OWNER}:from-aistudio&state=open" --jq length)
+          if [ "$open" = "0" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/pulls" -f title="تغییرهای تازه از AI Studio" \
+              -f head=from-aistudio -f base=main \
+              -f body="این PR خودکار ساخته شد و تغییرهایی را که در Google AI Studio ثبت شده نشان می‌دهد. بعد از بازبینی merge کنید؛ بعد از merge، main دوباره به AI Studio فرستاده می‌شود." >/dev/null
+            echo "PR تازه ساخته شد."
+          else
+            echo "PR باز به‌روز شد."
+          fi
+          echo "تا این PR merge نشود، main به AI Studio فرستاده نمی‌شود."
