@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   deploy:
+    # فقط در مخزن اصلی اجرا شود، نه در نسخهٔ AI Studio
+    if: github.repository == 'MaryamJaberi/earth-through-time-new'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
